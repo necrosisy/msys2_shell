@@ -21,22 +21,22 @@ static std::unordered_map<std::wstring, std::string const> const NAME_TO_MSYSTEM
 		{L"clangarm64.exe", "CLANGARM64\t"},
 };
 
-static fs::path os_executable() {
-	unsigned int bs = 128;
-	std::wstring link_path(bs, wchar_t(0));
+static std::wstring os_executable() {
+	unsigned int buf_size = 128;
+	std::wstring symlink_path(buf_size, wchar_t(0));
 	while (true) {
-		auto r = GetModuleFileNameW(
+		auto length = GetModuleFileNameW(
 			nullptr,
-			link_path.data(),
-			bs
+			symlink_path.data(),
+			buf_size
 		);
-		if (r < bs) {
+		if (length < buf_size) {
 			break;
 		}
-		bs += bs;
-		link_path.resize(bs, wchar_t(0));
+		buf_size += buf_size;
+		symlink_path.resize(buf_size);
 	}
-	return link_path;
+	return symlink_path;
 }
 
 static void set_termination_job() {
@@ -52,33 +52,37 @@ static void set_termination_job() {
 	);
 }
 
-static fs::path resolve_exe_path() {
-	auto lp = os_executable();
+static std::wstring resolve_symlink(fs::path const& symlink_path) {
 
-	auto it = NAME_TO_MSYSTEM.find(lp.filename());
+	auto it = NAME_TO_MSYSTEM.find(symlink_path.filename().c_str());
 	if (it == NAME_TO_MSYSTEM.end()) {
 		exit(EXIT_FAILURE);
 	}
 	MSYSTEM = it->second;
 
 	std::error_code ec{};
-	auto target = fs::read_symlink(lp, ec);
+	auto target_path = fs::read_symlink(symlink_path, ec);
 	if (ec) {
 		exit(EXIT_FAILURE);
 	}
-
-	target.replace_filename("sh.exe");
-	lp = fs::read_symlink(target, ec);
+	target_path.replace_filename(L"sh.exe");
+	auto exe_path = fs::read_symlink(target_path, ec);
 	if (ec) {
 		exit(EXIT_FAILURE);
 	}
-
-	return lp;
+	if (!fs::is_regular_file(exe_path, ec)) {
+		exit(EXIT_FAILURE);
+	}
+	return exe_path;
 }
 
+
 static void run_process() {
-	auto path = resolve_exe_path();
-	std::wstring cmd(L"\"" + path.wstring() + L"\" -l");
+
+	std::wstring path{ resolve_symlink(os_executable()) };
+
+	std::wstring cmd{};
+	cmd.append(L"\"").append(path).append(L"\" -l");
 
 	std::string env{};
 	env.append("PATH=\t");
@@ -98,7 +102,7 @@ static void run_process() {
 	STARTUPINFOW start_info{};
 	GetStartupInfoW(&start_info);
 	CreateProcessW(
-		path.c_str(),
+		path.data(),
 		cmd.data(),
 		nullptr,
 		nullptr,
