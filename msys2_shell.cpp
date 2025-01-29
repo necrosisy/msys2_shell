@@ -22,7 +22,7 @@ static std::unordered_map<std::wstring, std::string const> const NAME_TO_MSYSTEM
 };
 
 static std::wstring os_executable() {
-	unsigned int buf_size = 128;
+	unsigned int buf_size = 1 << 7;
 	std::wstring symlink_path(buf_size, wchar_t(0));
 	while (true) {
 		auto length = GetModuleFileNameW(
